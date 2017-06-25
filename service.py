@@ -40,5 +40,62 @@ def autostart():
     return
 
 
+    
+class Main():
+    def __init__( self ):
+        debug(u"init main")
+        self._service_setup()
+        while not xbmc.abortRequested:
+            xbmc.sleep(1000)
+
+    def _service_setup( self ):
+        debug(u"installing service")
+        self.Player = MyPlayer(action = self._service_janitor)
+
+    def _service_janitor( self, video_type, expired_videos ):
+        debug(u"service janitor")
+        # mark as watched
+        debug(u"{0} to clean : {1} ({2})".format(video_type, expired_videos[u"title"], expired_videos[u"filename"]),xbmc.LOGNOTICE)
+        try:
+            cleaner = Cleaner()
+            results, _ = cleaner.clean_all(video_type=video_type, expired_videos=expired_videos)
+            # do janitor
+            notify(results)
+        except:
+            debug(u"failed to do janitor on video {0} (filename= {1} )".format(expired_videos[u"filename"],expired_videos[u"title"]), xbmc.LOGNOTICE)
+        
+   
+# monitor notifications
+class MyPlayer(xbmc.Monitor):
+    def __init__( self, *args, **kwargs ):
+        debug(u"Player Class Init")
+        xbmc.Monitor.__init__( self )
+        self.action = kwargs[u"action"]
+        
+    def onNotification( self, sender, method, data ):
+        if sender == u"xbmc":
+            # Replace with next condition to enable clean after marked seen in library
+            # if method == "Player.OnStop" or method == "VideoLibrary.OnUpdate":
+            if method == u"Player.OnStop":
+                
+                debug(u"xbmc {0}".format(method))
+                result = json.loads(data)
+                if method == u"Player.OnStop" or ( method == u"VideoLibrary.OnUpdate" and "playcount" in result ):
+                    # if viewing in file mode and playback stopped at the end
+                    if "item" in result and "title" in result["item"] and result["end"]:
+                        if result["item"]["type"] == "episode" or result["item"]["type"] == "movie" or result["item"]["type"] == "musicvideo":
+                            # mark episode as watched
+                            expired_videos = {"filename":result["item"]["file"],"title":result["item"]["title"]}
+                            self.action(result["item"]["type"] + "s",expired_videos)
+                    elif method == u"Player.OnStop":
+                        # wait 1s before marking episode
+                        xbmc.sleep(1000)
+
 if __name__ == "__main__":
-    autostart()
+    debug(u"loading main service")
+    if get_setting(instant_enabled):
+        debug(u"service instant clean")
+        Main()
+    else:
+        debug(u"run once")
+        autostart()

@@ -8,7 +8,6 @@ from reset_exclusions import *
 from utils import *
 from viewer import *
 
-
 class Cleaner(object):
     """
     The Cleaner class allows users to clean up their movie, TV show and music video collection by removing watched
@@ -102,15 +101,18 @@ class Cleaner(object):
         """
         self.silent = True
 
-    def clean(self, video_type):
+    def clean(self, video_type, expired_videos=None ):
         """
         Clean all watched videos of the provided type.
 
         :type video_type: unicode
         :param video_type: The type of videos to clean (one of TVSHOWS, MOVIES, MUSIC_VIDEOS).
+        :type expired_videos: unicode list
+        :param expired_videos: (Optional) A list of expired videos, along with a number of extra attributes specific to the video type.
         :rtype: (list, int, int)
         :return: A list of the filenames that were cleaned, as well as the number of files cleaned and the return status.
         """
+        immediate_file_clean = True if expired_videos else False
         cleaned_files = []
         count = 0
         type_translation = {self.MOVIES: translate(32626), self.MUSIC_VIDEOS: translate(32627), self.TVSHOWS: translate(32628)}
@@ -133,7 +135,8 @@ class Cleaner(object):
         progress_percent = 0
 
         if clean_this_video_type:
-            expired_videos = self.get_expired_videos(video_type)
+            if not immediate_file_clean:
+                expired_videos = self.get_expired_videos(video_type)
             if not self.silent:
                 amount = len(expired_videos)
                 debug(u"Found {0} videos that may need cleaning.".format(amount))
@@ -202,32 +205,43 @@ class Cleaner(object):
 
         return cleaned_files, count, self.exit_status
 
-    def clean_all(self):
+    def clean_all(self, video_type=None, expired_videos=None):
         """
         Clean up any watched videos in the Kodi library, satisfying any conditions set via the addon settings.
-
+        
+        :type video_type: unicode
+        :param video_type: The type of videos to clean (one of TVSHOWS, MOVIES, MUSIC_VIDEOS).
+        :type expired_videos: unicode list
+        :param expired_videos: (Optional) A list of expired videos, along with a number of extra attributes specific to the video type.
+        
         :rtype: (unicode, int)
         :return: A single-line (localized) summary of the cleaning results to be used for a notification, plus a status.
         """
         debug(u"Starting cleaning routine.")
-
         if get_setting(clean_when_idle) and xbmc.Player().isPlaying():
             debug(u"Kodi is currently playing a file. Skipping cleaning.", xbmc.LOGWARNING)
             return None, self.exit_status
 
         results = {}
         cleaning_results, cleaned_files = [], []
-        if not get_setting(clean_when_low_disk_space) or (get_setting(clean_when_low_disk_space) and disk_space_low()):
+        if (expired_videos) or (not get_setting(clean_when_low_disk_space) or (get_setting(clean_when_low_disk_space) and disk_space_low())):
             if not self.silent:
                 self.progress.create(ADDON_NAME, *map(translate, (32619, 32615, 32615)))
                 self.progress.update(0)
                 self.monitor.waitForAbort(2)
-            for video_type in [self.MOVIES, self.MUSIC_VIDEOS, self.TVSHOWS]:
-                if not self.__is_canceled():
-                    cleaned_files, count, status = self.clean(video_type)
-                    if count > 0:
-                        cleaning_results.extend(cleaned_files)
-                        results[video_type] = count
+            if expired_videos:
+                for video_type in [self.MOVIES, self.MUSIC_VIDEOS, self.TVSHOWS]:
+                    if not self.__is_canceled():
+                        cleaned_files, count, status = self.clean(video_type)
+                        if count > 0:
+                            cleaning_results.extend(cleaned_files)
+                            results[video_type] = count
+            else:
+                cleaned_files, count, status = self.clean(video_type,expired_videos)
+                if count > 0:
+                    cleaning_results.extend(cleaned_files)
+                    results[video_type] = count
+                
             if not self.silent:
                 self.progress.close()
 
